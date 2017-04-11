@@ -16,7 +16,7 @@
 //Configuração sensores temperatura e umidade
 //Define o modelo do sensor DHT e o pino
 #define DHTPIN A0
-#define DHTTYPE DHT11
+#define DHTTYPE DHT22
 DHT dht(DHTPIN, DHTTYPE);
 
 //Define em centimetros o nivel minimo e máximo da caixa de agua
