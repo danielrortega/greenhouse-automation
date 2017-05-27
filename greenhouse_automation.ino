@@ -1,18 +1,16 @@
 //Programa: Greenhouse Automation
 //Autor: Daniel Ortega
 //Plataforma: Arduino Mega 2560
-//Versão: 0.1.4
-//Data: 22/05/2017
+//Versão: 0.1.7
+//Data: 27/05/2017
 
-#include <Ultrasonic.h>
+//#include <Ultrasonic.h>
 #include <DHT.h>
-#include <DHT_U.h>
 #include <LiquidCrystal_I2C.h>
 #include <SPI.h>
 #include <Ethernet.h>
 
 //Configuração sensor ultrassonico-------------------------------------------
-
 //Define os pinos do Arduino ligados ao Trigger e Echo
 #define PINO_TRG  14
 #define PINO_ECHO 15
@@ -28,8 +26,13 @@ Ultrasonic ultrasonic(PINO_TRG, PINO_ECHO);
 
 //Define o modelo do sensor DHT e o pino
 #define DHTPIN 8
+#define DHTPIN1 9
+
 #define DHTTYPE DHT22
+#define DHTTYPE1 DHT22
+
 DHT dht(DHTPIN, DHTTYPE);
+DHT dht1(DHTPIN1, DHTTYPE);
 
 
 //Define nome e pino dos reles
@@ -59,29 +62,40 @@ byte grau[8] ={ B00001100,
 
 //Configuração ethernet-------------------------------------------------------
 
-//Definicoes de IP, mascara de rede e gateway
-byte mac[] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
-IPAddress ip(192,168,1,252);          //Define o endereco IP
-IPAddress gateway(192,168,1,1);     //Define o gateway
-IPAddress subnet(255, 255, 255, 0); //Define a máscara de rede
- 
-//Inicializa o servidor web na porta 80
-EthernetServer server(80);
+byte mac[] = { 0x90, 0xA2, 0xDA, 0x0D, 0xCD, 0xB8 };
+EthernetClient client;
 
-//----------------------------------------------------------------------------
+
+//Cria a variável data para envio ao DB---------------------------------------
+
+String data;
+  
 
 void setup()
 {
+  
   //Inicializa a serial
   Serial.begin(9600);
 
   Serial.println("Porta Serial OK");
-  Serial.println(Ethernet.localIP());
   Serial.println("Aguardando dados...");
   
+  // Inicializa o display
+  lcd.begin(16, 2);
+  lcd.clear(); 
+  lcd.setCursor(0,0);
+  lcd.print("Conectando...");
+  
+  if (Ethernet.begin(mac) == 0) {
+    Serial.println("A configuracao da rede falhou. Reinicie o sistema");
+  };
+
+  data = "";
+    
   //Inicializa o DHT
   dht.begin();
-
+  dht1.begin();
+  
   //Define os pinos dos reles como saida
   pinMode(relay_1, OUTPUT);
   pinMode(relay_2, OUTPUT);
@@ -92,25 +106,20 @@ void setup()
   pinMode(relay_7, OUTPUT);
   pinMode(relay_8, OUTPUT);
 
-  // Inicializa o display
-  lcd.begin(16, 2); //Inicializa o display 16x2
+  //Mensagem boas vindas
   lcd.clear(); 
   lcd.createChar(0, grau); // Cria o caracter customizado com o simbolo do grau
   lcd.setCursor(1,0); // Informacoes iniciais no display
   lcd.print("Greenhouse ATM");
-  lcd.setCursor(3,1);
-  lcd.print("Olivopampa");
-
-  delay(2000);
-  
-  //Inicializa a interface de rede
-  Ethernet.begin(mac, ip, gateway, subnet);
-  server.begin();
+  lcd.setCursor(4,1);
+  lcd.print("Welcome");
 
 }
 
 void loop()
 {
+  
+  //Automacao Reservatorio Agua
   
   //Variaveis para guardar os valores em cm (cmSec)
   float cmMsec;
@@ -131,18 +140,37 @@ void loop()
     digitalWrite(relay_1, LOW);
   }
   
-   //Le temperatura e umidade
+   
+   //Le temperatura e umidade----------------------------------------------------
+   
   float h = dht.readHumidity();
   float t = dht.readTemperature();
-
+  float h1 = dht1.readHumidity();
+  float t1 = dht1.readTemperature();
+  
   // Verifica se o sensor esta respondendo
   if (isnan(h) || isnan(t))
   {
-    Serial.println("Falha ao ler dados do sensor DHT");
+    Serial.println("Falha ao ler dados do sensor externo");
+    return;
+  }
+   if (isnan(h1) || isnan(t1))
+  {
+    Serial.println("Falha ao ler dados do sensor interno");
     return;
   }
 
-   
+  // Computa sensacao termica
+  float hic = dht.computeHeatIndex(t, h, false);
+  float hic1 = dht.computeHeatIndex(t1, h1, false);
+
+  //Computa o ponto de orvalho
+  double gamma = log(h / 100) + ((17.62 * t) / (243.5 + t));
+  double dp = 243.5 * gamma / (17.62 - gamma);
+  
+  //Automacao Climatizadores----------------------------------------------------
+  
+ 
   //Ativa ventiladores se temperatura maior que 30 graus
   if (t >= 30)
   {
@@ -169,92 +197,149 @@ void loop()
   digitalWrite(relay_7, HIGH);
   digitalWrite(relay_8, HIGH);
   
-  //Mostra na serial os dados lidos pelos sensores
+
+  //Dados dos sensores na serial-------------------------------------------------------------
+  
   Serial.print("Distancia: ");
   Serial.print(cmMsec);
-  Serial.print(" cm ");
-  Serial.print("Temperatura: ");
+  Serial.println(" cm ");
+  Serial.print("Temperatura Ext: ");
   Serial.print(t,1);
   Serial.print(" *C ");
-  Serial.print("Umidade: ");
+  Serial.print("Umidade Ext: ");
   Serial.print(h,1);
-  Serial.println(" %");
+  Serial.print(" % ");
+  Serial.print("Sensacao Termica Ext: ");
+  Serial.print(hic,1);
+  Serial.print(" *C ");
+  Serial.print("Ponto de Orvalho: ");
+  Serial.print(dp,1);
+  Serial.println(" *C");
+  Serial.print("Temperatura Int: ");
+  Serial.print(t1,1);
+  Serial.print(" *C ");
+  Serial.print("Umidade Int: ");
+  Serial.print(h1,1);
+  Serial.print(" % ");
+  Serial.print("Sensacao Termica Int: ");
+  Serial.print(hic1,1);
+  Serial.println(" *C");
+  
+  //HTTP Post-------------------------------------------------------------------
+  
+  String temp = String(t,1);
+  
+  String umid = String (h,1);
 
+  String temp1 = String(t1,1);
+  
+  String umid1 = String (h1,1);
+
+  String sens = String(hic,1);
+  
+  String sens1 = String (hic1,1);
+
+  String dewp = String (dp,1);
+  
+  data = "greenhouse_atm,SOURCE=sws_1 Temperatura=" + temp + ",Umidade=" + umid + ",Temperatura_Int=" + temp1 + ",Umidade_int=" + umid1 + ",Sens_Ext=" + sens + ",Sens_Int=" + sens1 + ",DewPoint=" + dewp;
+
+  if (client.connect("192.168.1.7",8086)) {
+      client.println("POST /write?db=olivopampa_atm HTTP/1.1");
+      client.println("Host: 192.168.1.7");
+      client.println("User-Agent: Arduino/1.0");
+      client.println("Connection: close");
+      client.println("Content-Type: application/x-www-form-urlencoded");
+      client.print("Content-Length: ");
+      client.println(data.length()); 
+      client.println(); 
+      client.print(data);
+      Serial.println(data);
+      
+      delay(50); //aguardo o servidor processar os dados
+
+  } 
+
+  if (client.connected()) { 
+    client.stop();  // Desconecta do servidor
+    }
+
+  //LCD Display-------------------------------------------------------------
+  
   lcd.clear();
   
-  // Mostra a temperatura no display
+  // Mostra a temperatura do DHT22 no display
   lcd.setCursor(0,0);
-  lcd.print("Temp. : ");
+  lcd.print("Temp Ext: ");
   lcd.setCursor(10,0);
   lcd.print(t,1);
   lcd.write(byte(0)); // Mostra o simbolo do grau
   lcd.print("C");
 
   
-  // Mostra a umidade no display
+  // Mostra a umidade do DHT22 no display
   lcd.setCursor(0,1);
-  lcd.print("Umid. : ");
+  lcd.print("Umid Ext: ");
   lcd.setCursor(10,1);
   lcd.print(h,1);
   lcd.setCursor(15,1);
+  lcd.print("%");
+
+  delay(3000);
+  
+  lcd.clear();
+  
+  // Mostra a temperatura do DHT interno no display
+  lcd.setCursor(0,0);
+  lcd.print("Temp Int: ");
+  lcd.setCursor(10,0);
+  lcd.print(t1,1);
+  lcd.write(byte(0));
+  lcd.print("C");
+
+  
+  // Mostra a umidade do DHT interno no display
+  lcd.setCursor(0,1);
+  lcd.print("Umid Int: ");
+  lcd.setCursor(10,1);
+  lcd.print(h1,1);
+  lcd.setCursor(15,1);
   lcd.print("%"); 
 
-   //Aguarda conexao do browser
-  EthernetClient client = server.available();
-  if (client) {
-    Serial.println("Novo Cliente Conectado");
-    // an http request ends with a blank line
-    boolean currentLineIsBlank = true;
-    while (client.connected()) {
-      if (client.available()) {
-        char c = client.read();
-        Serial.write(c);
-        // if you've gotten to the end of the line (received a newline
-        // character) and the line is blank, the http request has ended,
-        // so you can send a reply
-        if (c == 'n' && currentLineIsBlank) {
-          // send a standard http response header
-          client.println("HTTP/1.1 200 OK");
-          client.println("Content-Type: text/html");
-          client.println("Connection: close");
-          client.println("Refresh: 2"); //Recarrega a pagina a cada 5seg
-          client.println();
-          client.println("<!DOCTYPE HTML>");
-          client.println("<html>");
-          //Configura o texto e imprime o titulo no browser
-          client.print("<font color=#FF0000><b><u>");
-          client.print("Greenhouse Automation");
-          client.print("</u></b></font>");
-          client.println("<br />");
-          client.println("<br />");
-          //Mostra as informacoes lidas pelo sensor ultrasonico
-          client.print("Temperatura: ");
-          client.print("<b>");
-          client.print(t);
-          client.print(" °C");
-          client.print("</b>");
-          client.print(" Umidade: ");
-          client.print("<b>");
-          client.print(h);
-          client.print(" %");
-          client.println("</b></html>");
-          break;
-        }
-        if (c == 'n') {
-          // you're starting a new line
-          currentLineIsBlank = true;
-        } 
-        else if (c != 'r') {
-          // you've gotten a character on the current line
-          currentLineIsBlank = false;
-        }
-      }
-    }
-    // give the web browser time to receive the data
-    delay(1);
-    // close the connection:
-    client.stop();
-  }
+  delay(3000);
   
-  delay(5000);
+  lcd.clear();
+  
+  // Mostra a sensacao termica externa no display
+  lcd.setCursor(0,0);
+  lcd.print("Sens Ext: ");
+  lcd.setCursor(10,0);
+  lcd.print(hic,1);
+  lcd.write(byte(0));
+  lcd.print("C");
+
+  
+  // Mostra a sensacao termica interna no display
+  lcd.setCursor(0,1);
+  lcd.print("Sens Int: ");
+  lcd.setCursor(10,1);
+  lcd.print(hic1,1);
+  lcd.write(byte(0));
+  lcd.print("C");
+
+  delay(3000);
+
+  lcd.clear();
+  
+  // Mostra o ponto de orvalho no display
+  lcd.setCursor(0,0);
+  lcd.print("Ponto de Orvalho");
+  lcd.setCursor(5,1);
+  lcd.print(dp,1);
+  lcd.write(byte(0));
+  lcd.print("C");
+
+  delay(3000);
+
+  //------------------------------------------------------------------------
+                              
 }
