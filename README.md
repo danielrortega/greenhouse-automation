@@ -8,4 +8,4 @@ líquido para mostrar e configurar tempos e intervalos de pulverização. També
 Na próxima etada será incluído shield ethernet ou ESP8266 para visualização de dashboard em tempo real e outros acessórios para 
 automatizar irrigação da área aberta (moisture sensor e pluviômetro).
 
-Com uso do Ethernet Shield grava informações numa base de dados do InfluxDB para visualização num dashboard do Grafana. Mais detalhes sobre essas soluções acesse meu blog www.danielortega.com.br
+Com uso do Ethernet Shield grava informações numa base de dados do InfluxDB para visualização num dashboard do Grafana.
